@@ -1,0 +1,14 @@
+{
+  "display_name": "P5 对话气泡",
+  "loading_order": 120,
+  "js": "index.js",
+  "css": "style.css",
+  "author": "TavernWeave（移植自 奶茶のP5聚合 阅读段落脚本）",
+  "version": "1.0.1",
+  "auto_update": false,
+  "hooks": {
+    "disable": "onDisable",
+    "clean": "onClean"
+  },
+  "description": "把消息里的引号台词渲染成 P5 风格倾斜气泡，另有论坛体卡片、弹幕条，三项独立开关，10 套日/夜配色。只改显示，不改聊天记录。"
+}

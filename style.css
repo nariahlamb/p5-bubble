@@ -1,0 +1,144 @@
+/* P5 对话气泡 —— 颜色全部来自 #p5b-theme 注入的 --p5b-* 变量 */
+
+.mes_text p.p5b-host .p5b-line { display: block; }
+
+/* ---------- 对话气泡：底形由 SVG 按实际尺寸绘制，文字是真实可选中的文本 ---------- */
+.mes_text .p5b-bubble {
+    position: relative;
+    isolation: isolate;
+    display: block;
+    box-sizing: border-box;
+    width: fit-content;
+    max-width: calc(100% - 2.2em);
+    margin: 0.55em 1em 1.45em 1em;
+    padding: 0.77em 0.85em;
+    font-size: calc(1em * var(--p5b-scale, 1));
+    line-height: 1.45;
+    text-align: left;
+    text-indent: 0;
+}
+.mes_text .p5b-bubble.p5b-right { margin-left: auto; }
+.mes_text .p5b-shape {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: -1;
+    overflow: visible;
+    pointer-events: none;
+}
+.mes_text .p5b-text {
+    position: relative;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.p5b-main { stroke-linejoin: miter; }
+.p5b-star-fill { opacity: 0.25; }
+.p5b-star-line { fill: none; stroke-width: 8; opacity: 0.6; }
+
+.p5b-left .p5b-main { fill: var(--p5b-lB); stroke: var(--p5b-lS); }
+.p5b-left .p5b-shadow, .p5b-left .p5b-star-fill { fill: var(--p5b-lSh); }
+.p5b-left .p5b-star-line { stroke: var(--p5b-lSh); }
+.mes_text .p5b-left .p5b-text { color: var(--p5b-lT); }
+
+.p5b-right .p5b-main { fill: var(--p5b-rB); stroke: var(--p5b-rS); }
+.p5b-right .p5b-shadow, .p5b-right .p5b-star-fill { fill: var(--p5b-rSh); }
+.p5b-right .p5b-star-line { stroke: var(--p5b-rSh); }
+.mes_text .p5b-right .p5b-text { color: var(--p5b-rT); }
+
+/* ---------- 论坛体卡片 ---------- */
+.mes_text .p5b-forum {
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+    margin: 0.6em 0.7em 1.1em 0.2em;
+    padding: 0.75em 0.85em;
+    font-size: calc(1em * var(--p5b-scale, 1));
+    line-height: 1.45;
+    text-indent: 0;
+    color: var(--p5b-lT);
+    background:
+        repeating-linear-gradient(45deg, var(--p5b-stripe) 0 2px, transparent 2px 7px),
+        var(--p5b-lB);
+    border: 3px solid var(--p5b-lS);
+    box-shadow: 6px 6px 0 var(--p5b-lSh);
+}
+.p5b-forum-star {
+    position: absolute;
+    right: -0.8em;
+    bottom: -0.8em;
+    width: 5.5em;
+    height: 5.5em;
+    fill: var(--p5b-lT);
+    opacity: 0.06;
+    pointer-events: none;
+}
+.p5b-forum-head {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin-bottom: 0.35em;
+}
+.p5b-avatar {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 1.55em;
+    height: 1.55em;
+    font-size: 0.85em;
+    color: var(--p5b-lB);
+    background: var(--p5b-accent);
+    border: 2px solid var(--p5b-lS);
+}
+.p5b-forum-name { font-weight: bold; font-size: 0.9em; }
+.p5b-forum-body { position: relative; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ---------- 弹幕条 ---------- */
+.mes_text .p5b-danmu-track {
+    display: flex;
+    box-sizing: border-box;
+    margin: 0.45em 0;
+    text-indent: 0;
+}
+.mes_text .p5b-danmu {
+    position: relative;
+    isolation: isolate;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    max-width: calc(100% - 1em);
+    padding: 0.28em 1em;
+    font-size: calc(0.9em * var(--p5b-scale, 1));
+    font-weight: bold;
+    line-height: 1.4;
+    color: var(--p5b-accent);
+}
+.p5b-danmu::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    transform: skewX(-20deg);
+    background: var(--p5b-lB);
+    border: 2px solid var(--p5b-lS);
+    box-shadow: 4px 4px 0 var(--p5b-lSh);
+}
+.p5b-badge { flex: none; width: 0.8em; height: 0.8em; fill: var(--p5b-accent); }
+
+/* ---------- 设置面板 ---------- */
+.p5b-panel { display: flex; flex-direction: column; gap: 4px; }
+.p5b-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.p5b-row > label { flex: 1; }
+.p5b-row > .text_pole { flex: 0 0 9em; margin: 0; }
+.p5b-preview { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.p5b-sw { width: 2.2em; height: 1.2em; border: 2px solid; }
+.p5b-sw-l { background: var(--p5b-lB); border-color: var(--p5b-lS); box-shadow: 3px 3px 0 var(--p5b-lSh); }
+.p5b-sw-r { background: var(--p5b-rB); border-color: var(--p5b-rS); box-shadow: 3px 3px 0 var(--p5b-rSh); }
+.p5b-sw-pal {
+    flex: 1;
+    height: 0.8em;
+    background: linear-gradient(90deg, var(--p5b-p0) 0 14.3%, var(--p5b-p1) 0 28.6%, var(--p5b-p2) 0 42.9%,
+        var(--p5b-p3) 0 57.1%, var(--p5b-p4) 0 71.4%, var(--p5b-p5) 0 85.7%, var(--p5b-p6) 0);
+}
+.p5b-hint { opacity: 0.7; }
