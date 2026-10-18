@@ -2,7 +2,7 @@
 // 移植自阅读 App 段落脚本「奶茶のP5聚合(0904)」：对话气泡 / 论坛体 / 弹幕 + 10 套配色。
 // 只改渲染后的 DOM，不改 chat 数据；消息文本一律走 textContent，不拼 innerHTML。
 
-export const VERSION = '1.0.2';
+export const VERSION = '1.0.3';
 const SETTINGS_KEY = 'p5Bubble';
 const ERR_KEY = 'p5b_last_error';
 
@@ -599,23 +599,22 @@ function syncChatToggle() {
 function buildWand() {
     const menu = document.getElementById('extensionsMenu');
     if (!menu || document.getElementById('p5b_wand')) return;
-    const item = el('div', 'list-group-item flex-container flexGap5 p5b-wand');
+    // 整项就是按钮：TT 的移动端菜单里塞不进跟着展开的下拉（原生 select 弹不出来），
+    // 所以这里只做一件事——切日/夜，文案只留主题名。
+    const item = el('div', 'list-group-item flex-container flexGap5 interactable p5b-wand');
     item.id = 'p5b_wand';
+    item.tabIndex = 0;
+    item.setAttribute('role', 'button');
 
-    // 日/夜图标：点一下换模式，不再写长句子
     const icon = el('div', 'fa-solid fa-sun extensionsMenuExtensionButton p5b-wand-icon');
-    icon.tabIndex = 0;
-    icon.setAttribute('role', 'button');
-
-    // 配色主题：只列当前模式的 5 套
-    const pick = el('select', 'text_pole p5b-wand-pick');
-    pick.id = 'p5b_wand_pick';
+    const text = el('span', 'p5b-wand-text');
+    text.id = 'p5b_wand_text';
 
     // 出错时还得有地方写字（TT 没有控制台），正常时用 :empty 隐藏
     const label = el('span', 'p5b-wand-err');
     label.id = 'p5b_wand_label';
 
-    item.append(icon, pick, label);
+    item.append(icon, text, label);
 
     const toggle = () => {
         const s = settings();
@@ -624,25 +623,14 @@ function buildWand() {
         applyTheme();
         syncPanelThemeSelects();
     };
-    icon.addEventListener('click', toggle);
-    icon.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
-
-    pick.addEventListener('change', () => {
-        const s = settings();
-        s[s.mode === 'night' ? 'nightPreset' : 'dayPreset'] = pick.value;
-        save();
-        applyTheme();
-        syncPanelThemeSelects();
-    });
-    // 下拉展开/选择时不让点击冒泡到菜单，否则菜单会被当成「点了外部」而关掉
-    pick.addEventListener('click', e => e.stopPropagation());
-    pick.addEventListener('mousedown', e => e.stopPropagation());
+    item.addEventListener('click', toggle);
+    item.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
 
     menu.appendChild(item);
     updateWandLabel();
 }
 
-/** 面板里的模式/配色下拉对齐到当前设置（从魔棒改过时用） */
+/** 面板里的模式下拉对齐到当前设置（从魔棒改过时用） */
 function syncPanelThemeSelects() {
     const s = settings();
     const modeSel = document.getElementById('p5b_mode');
@@ -655,30 +643,21 @@ function syncPanelThemeSelects() {
 
 function updateWandLabel() {
     const s = settings();
+    const night = s.mode === 'night';
+    const item = document.getElementById('p5b_wand');
+    if (item) {
+        const hint = night ? '夜间配色（点按切到日间）' : '日间配色（点按切到夜间）';
+        item.title = hint;
+        item.setAttribute('aria-label', `P5气泡 ${currentThemeName(s)}：${hint}`);
+    }
     const icon = document.querySelector('#p5b_wand .p5b-wand-icon');
     if (icon) {
-        const night = s.mode === 'night';
         icon.classList.toggle('fa-moon', night);
         icon.classList.toggle('fa-sun', !night);
-        icon.title = night ? '夜间配色（点按切到日间）' : '日间配色（点按切到夜间）';
-        icon.setAttribute('aria-label', icon.title);
     }
-    const pick = document.getElementById('p5b_wand_pick');
-    if (pick) {
-        const names = s.mode === 'night' ? NIGHT_PRESETS : DAY_PRESETS;
-        const sig = names.join('|');
-        if (pick.dataset.sig !== sig) {
-            pick.dataset.sig = sig;
-            pick.replaceChildren(...names.map(n => {
-                const o = document.createElement('option');
-                o.value = n;
-                o.textContent = n;
-                return o;
-            }));
-        }
-        pick.value = currentThemeName(s);
-        pick.title = s.mode === 'night' ? '夜间配色主题' : '日间配色主题';
-    }
+    // 文案只留主题名：日间 5 套 / 夜间 5 套各自的名字已经能说明当前模式
+    const text = document.getElementById('p5b_wand_text');
+    if (text) text.textContent = currentThemeName(s);
     // 不在这里清空 #p5b_wand_label：它是 TT 上唯一能看到的错误出口，留着给 reportError 用
 }
 
