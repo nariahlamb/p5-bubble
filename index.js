@@ -2,7 +2,7 @@
 // 移植自阅读 App 段落脚本「奶茶のP5聚合(0904)」：对话气泡 / 论坛体 / 弹幕 + 10 套配色。
 // 只改渲染后的 DOM，不改 chat 数据；消息文本一律走 textContent，不拼 innerHTML。
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.0.2';
 const SETTINGS_KEY = 'p5Bubble';
 const ERR_KEY = 'p5b_last_error';
 
@@ -33,7 +33,9 @@ export const DEFAULTS = Object.freeze({
     strict: true,      // 跳过带 class/style 的卡片自带 HTML 容器
     startSide: 'left',
     splitLength: 10,   // 台词达到该字数后遇句末标点拆成新气泡；0 = 不拆
+    danmuSplitLength: 24,  // 弹幕单条达到该字数后在标点处断开；0 = 不断
     fontScale: 100,
+    bubbleWidth: 0,    // 气泡宽度占消息区百分比；0 = 按内容自适应
     mode: 'day',
     dayPreset: 'P5柔和',
     nightPreset: '夜间Storm',
@@ -47,6 +49,7 @@ const DIALOGUE_VERB_RE = /(说|道|问|喊|叫|答|笑|吼|骂|叹|念|唤|应|�
 // 成对匹配，避免 “…」 这种错配被吃掉
 const QUOTE_RE = /“([^”]*)”|"([^"\n]*)"|「([^」]*)」|『([^』]*)』/g;
 const SPLIT_PUNC_RE = /[。！；？!?…~—]/;
+const DANMU_SOFT_RE = /[，,、；;。.！!？?…~—：:]/;
 
 export function hashText(text) {
     let h = 0;
@@ -117,6 +120,33 @@ export function splitDialogue(text, maxLen) {
 }
 
 /**
+ * 弹幕切字：单条太长时在标点处断开，实在没标点就按 1.5 倍阈值硬切。
+ * 与 splitDialogue 的区别是阈值一到就断（弹幕是一整行，没有句末语义）。
+ * 0 或负数 = 不切。
+ */
+export function splitDanmuText(text, maxLen) {
+    const src = String(text ?? '');
+    const n = Number(maxLen) || 0;
+    if (n <= 0 || src.length <= n) return [src];
+    const hard = Math.ceil(n * 1.5);
+    const out = [];
+    let cur = '';
+    for (let i = 0; i < src.length; i++) {
+        cur += src[i];
+        if (DANMU_SOFT_RE.test(src[i]) && cur.length >= n) {
+            while (i + 1 < src.length && DANMU_SOFT_RE.test(src[i + 1]) && cur.length < hard) cur += src[++i];
+            out.push(cur);
+            cur = '';
+        } else if (cur.length >= hard) {
+            out.push(cur);
+            cur = '';
+        }
+    }
+    if (cur.trim()) out.push(cur);
+    return out.map(s => s.trim()).filter(Boolean);
+}
+
+/**
  * 分析一行文本。返回：
  *  {kind:'plain'} | {kind:'danmu', text} | {kind:'forum', name, content}
  *  | {kind:'dialogue', parts:[{type:'text', text} | {type:'bubble', texts:[...]}]}
@@ -174,10 +204,14 @@ function hexToRgba(hex, a) {
     return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
 }
 
-export function themeCss(theme, scale) {
+export function themeCss(theme, scale, width = 0) {
     const vars = ['lB', 'lT', 'lS', 'lSh', 'rB', 'rT', 'rS', 'rSh'].map(k => `--p5b-${k}:${theme[k]};`).join('');
     const pal = theme.pal.map((c, i) => `--p5b-p${i}:${c};`).join('');
-    return `:root{${vars}${pal}--p5b-stripe:${hexToRgba(theme.pal[0], 0.15)};--p5b-scale:${scale};}`;
+    const w = Math.max(0, Math.min(100, Number(width) || 0));
+    // 固定宽度只在 >0 时输出。max-width 仍由 style.css 的 calc(100% - 2.2em) 兜底，
+    // 因此填 100% 等于「占满可用宽度」，不会横向溢出。
+    const widthRule = w > 0 ? `body .mes_text .p5b-bubble{width:${w}%;}` : '';
+    return `:root{${vars}${pal}--p5b-stripe:${hexToRgba(theme.pal[0], 0.15)};--p5b-scale:${scale};}${widthRule}`;
 }
 
 /* ============================ 运行时（仅浏览器） ============================ */
@@ -241,7 +275,9 @@ function applyTheme() {
         document.head.appendChild(state.styleEl);
     }
     const scale = Math.min(1.5, Math.max(0.6, Number(s.fontScale) / 100 || 1));
-    state.styleEl.textContent = themeCss(THEMES[currentThemeName(s)], scale);
+    state.styleEl.textContent = themeCss(THEMES[currentThemeName(s)], scale, s.bubbleWidth);
+    // 宽度/字号变了要立刻重画 SVG 底形。ResizeObserver 要等下一帧，这里同步补一次。
+    state.bubbles.forEach(b => { if (b.isConnected) layoutBubble(b); });
     updateWandLabel();
 }
 
@@ -312,7 +348,7 @@ function makeDanmu(text, index) {
         badge.append(svgEl('path', { d: STAR }));
         pill.append(badge);
     }
-    pill.append(el('span', null, text));
+    pill.append(el('span', 'p5b-danmu-text', text));
     track.append(pill);
     return track;
 }
@@ -358,7 +394,8 @@ function transformParagraph(p, root, s, counter) {
             else div.append(document.createElement('br'));
             frag.append(div);
         } else if (r.kind === 'danmu') {
-            frag.append(makeDanmu(r.text, counter.danmu++));
+            // 切字后每段各占一条弹幕轨，长句不会撑破弹幕框
+            for (const t of splitDanmuText(r.text, s.danmuSplitLength)) frag.append(makeDanmu(t, counter.danmu++));
         } else if (r.kind === 'forum') {
             frag.append(makeForum(r.name, r.content));
         } else {
@@ -487,8 +524,12 @@ function buildPanel() {
       <select id="p5b_side" class="text_pole" data-k="startSide"><option value="left">左</option><option value="right">右</option></select></div>
     <div class="p5b-row"><label for="p5b_split">长台词拆分（字，0=不拆）</label>
       <input id="p5b_split" class="text_pole" type="number" min="0" max="200" step="1" data-k="splitLength"></div>
+    <div class="p5b-row"><label for="p5b_danmu_split">弹幕切字（字，0=不切）</label>
+      <input id="p5b_danmu_split" class="text_pole" type="number" min="0" max="60" step="1" data-k="danmuSplitLength"></div>
     <div class="p5b-row"><label for="p5b_scale">气泡字号 %</label>
       <input id="p5b_scale" class="text_pole" type="number" min="60" max="150" step="5" data-k="fontScale"></div>
+    <div class="p5b-row"><label for="p5b_width">气泡宽度 %（0=自适应）</label>
+      <input id="p5b_width" class="text_pole" type="number" min="0" max="100" step="5" data-k="bubbleWidth"></div>
     <hr class="sysHR">
     <div class="p5b-row"><label for="p5b_mode">模式</label>
       <select id="p5b_mode" class="text_pole" data-k="mode"><option value="day">☀️ 日间</option><option value="night">🌙 夜间</option></select></div>
@@ -503,20 +544,26 @@ function buildPanel() {
 </div>`;
     host.appendChild(wrap);
 
-    const THEME_KEYS = new Set(['mode', 'dayPreset', 'nightPreset', 'fontScale']);
+    const THEME_KEYS = new Set(['mode', 'dayPreset', 'nightPreset', 'fontScale', 'bubbleWidth']);
+    const LIVE_KEYS = new Set(['fontScale', 'bubbleWidth']);
     wrap.querySelectorAll('[data-k]').forEach(input => {
         const k = input.dataset.k;
         if (input.type === 'checkbox') input.checked = !!s[k];
         else input.value = s[k];
-        input.addEventListener('change', () => {
+        const commit = () => {
+            // 数字框清空时先别写 0，等用户输完
+            if (input.type === 'number' && input.value === '') return;
             const cur = settings();
             cur[k] = input.type === 'checkbox' ? input.checked
                 : input.type === 'number' ? Math.max(Number(input.min) || 0, Math.min(Number(input.max) || 999, Number(input.value) || 0))
                 : input.value;
             save();
-            if (THEME_KEYS.has(k)) { applyTheme(); if (k === 'fontScale') state.bubbles.forEach(layoutBubble); }
+            // 字号/宽度只改样式，重画即可，不重扫 DOM
+            if (THEME_KEYS.has(k)) applyTheme();
             else rerender();
-        });
+        };
+        input.addEventListener('change', commit);
+        if (LIVE_KEYS.has(k)) input.addEventListener('input', commit);
     });
     const chatOff = wrap.querySelector('#p5b_chat_off');
     chatOff.addEventListener('change', () => {
@@ -544,33 +591,87 @@ function syncChatToggle() {
 function buildWand() {
     const menu = document.getElementById('extensionsMenu');
     if (!menu || document.getElementById('p5b_wand')) return;
-    const item = el('div', 'list-group-item flex-container flexGap5 interactable');
+    const item = el('div', 'list-group-item flex-container flexGap5 p5b-wand');
     item.id = 'p5b_wand';
-    item.tabIndex = 0;
-    item.setAttribute('role', 'button');
-    const icon = el('div', 'fa-solid fa-circle-half-stroke extensionsMenuExtensionButton');
-    const label = el('span');
+
+    // 日/夜图标：点一下换模式，不再写长句子
+    const icon = el('div', 'fa-solid fa-sun extensionsMenuExtensionButton p5b-wand-icon');
+    icon.tabIndex = 0;
+    icon.setAttribute('role', 'button');
+
+    // 配色主题：只列当前模式的 5 套
+    const pick = el('select', 'text_pole p5b-wand-pick');
+    pick.id = 'p5b_wand_pick';
+
+    // 出错时还得有地方写字（TT 没有控制台），正常时用 :empty 隐藏
+    const label = el('span', 'p5b-wand-err');
     label.id = 'p5b_wand_label';
-    item.append(icon, label);
+
+    item.append(icon, pick, label);
+
     const toggle = () => {
         const s = settings();
         s.mode = s.mode === 'night' ? 'day' : 'night';
         save();
         applyTheme();
-        const sel = document.getElementById('p5b_mode');
-        if (sel) sel.value = s.mode;
+        syncPanelThemeSelects();
     };
-    item.addEventListener('click', toggle);
-    item.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    icon.addEventListener('click', toggle);
+    icon.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+
+    pick.addEventListener('change', () => {
+        const s = settings();
+        s[s.mode === 'night' ? 'nightPreset' : 'dayPreset'] = pick.value;
+        save();
+        applyTheme();
+        syncPanelThemeSelects();
+    });
+    // 下拉展开/选择时不让点击冒泡到菜单，否则菜单会被当成「点了外部」而关掉
+    pick.addEventListener('click', e => e.stopPropagation());
+    pick.addEventListener('mousedown', e => e.stopPropagation());
+
     menu.appendChild(item);
     updateWandLabel();
 }
 
-function updateWandLabel() {
-    const label = document.getElementById('p5b_wand_label');
-    if (!label) return;
+/** 面板里的模式/配色下拉对齐到当前设置（从魔棒改过时用） */
+function syncPanelThemeSelects() {
     const s = settings();
-    label.textContent = `P5气泡：${s.mode === 'night' ? '🌙' : '☀️'} ${currentThemeName(s)}（点按切换日/夜）`;
+    const modeSel = document.getElementById('p5b_mode');
+    if (modeSel) modeSel.value = s.mode;
+    const day = document.getElementById('p5b_day');
+    if (day) day.value = s.dayPreset;
+    const night = document.getElementById('p5b_night');
+    if (night) night.value = s.nightPreset;
+}
+
+function updateWandLabel() {
+    const s = settings();
+    const icon = document.querySelector('#p5b_wand .p5b-wand-icon');
+    if (icon) {
+        const night = s.mode === 'night';
+        icon.classList.toggle('fa-moon', night);
+        icon.classList.toggle('fa-sun', !night);
+        icon.title = night ? '夜间配色（点按切到日间）' : '日间配色（点按切到夜间）';
+        icon.setAttribute('aria-label', icon.title);
+    }
+    const pick = document.getElementById('p5b_wand_pick');
+    if (pick) {
+        const names = s.mode === 'night' ? NIGHT_PRESETS : DAY_PRESETS;
+        const sig = names.join('|');
+        if (pick.dataset.sig !== sig) {
+            pick.dataset.sig = sig;
+            pick.replaceChildren(...names.map(n => {
+                const o = document.createElement('option');
+                o.value = n;
+                o.textContent = n;
+                return o;
+            }));
+        }
+        pick.value = currentThemeName(s);
+        pick.title = s.mode === 'night' ? '夜间配色主题' : '日间配色主题';
+    }
+    // 不在这里清空 #p5b_wand_label：它是 TT 上唯一能看到的错误出口，留着给 reportError 用
 }
 
 /* ---------------------------- 生命周期 ---------------------------- */

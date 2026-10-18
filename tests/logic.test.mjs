@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeLine, findDialogues, splitDialogue, parseDanmu, parseForum, bubblePath, themeCss, THEMES, DAY_PRESETS, NIGHT_PRESETS, DEFAULTS } from '../index.js';
+import { analyzeLine, findDialogues, splitDialogue, splitDanmuText, parseDanmu, parseForum, bubblePath, themeCss, THEMES, DAY_PRESETS, NIGHT_PRESETS, DEFAULTS } from '../index.js';
 
 const ALL = { ...DEFAULTS, forum: true, danmu: true };
 
@@ -51,6 +51,21 @@ test('主题表完整', () => {
         assert.equal(t.pal.length, 7);
         assert.match(themeCss(t, 1), /--p5b-rSh:#[0-9a-fA-F]{6};/);
     }
+});
+
+test('弹幕切字', () => {
+    assert.deepEqual(splitDanmuText('短句', 24), ['短句'], '没到阈值原样');
+    assert.deepEqual(splitDanmuText('一二三四五六七八', 0), ['一二三四五六七八'], '0=不切');
+    assert.deepEqual(splitDanmuText('一二三四，五六', 4), ['一二三四，', '五六'], '标点处断');
+    assert.deepEqual(splitDanmuText('abcdefgh', 3), ['abcde', 'fgh'], '无标点按 1.5 倍硬切');
+    assert.deepEqual(splitDanmuText('【】', 5), ['【】']);
+});
+
+test('气泡宽度写进注入样式', () => {
+    const t = THEMES['P5柔和'];
+    assert.match(themeCss(t, 1, 80), /p5b-bubble\{width:80%;\}/);
+    assert.doesNotMatch(themeCss(t, 1, 0), /p5b-bubble\{width/, '0 = 不输出宽度规则');
+    assert.match(themeCss(t, 1, 999), /width:100%;/, '上限夹到 100');
 });
 
 test('气泡路径', () => {

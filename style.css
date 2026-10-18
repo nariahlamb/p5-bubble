@@ -107,6 +107,8 @@
     display: inline-flex;
     align-items: center;
     gap: 0.3em;
+    box-sizing: border-box;
+    min-width: 0;
     max-width: calc(100% - 1em);
     padding: 0.28em 1em;
     font-size: calc(0.9em * var(--p5b-scale, 1));
@@ -125,6 +127,8 @@
     box-shadow: 4px 4px 0 var(--p5b-lSh);
 }
 .p5b-badge { flex: none; width: 0.8em; height: 0.8em; fill: var(--p5b-accent); }
+/* 长文本在弹幕框里换行，而不是撑破框 */
+.p5b-danmu-text { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
 
 /* ---------- 设置面板 ---------- */
 .p5b-panel { display: flex; flex-direction: column; gap: 4px; }
@@ -142,3 +146,23 @@
         var(--p5b-p3) 0 57.1%, var(--p5b-p4) 0 71.4%, var(--p5b-p5) 0 85.7%, var(--p5b-p6) 0);
 }
 .p5b-hint { opacity: 0.7; }
+
+/* ---------- 魔棒菜单项：日/夜图标 + 配色主题 ---------- */
+#p5b_wand { align-items: center; gap: 6px; }
+#p5b_wand .p5b-wand-icon { flex: none; cursor: pointer; }
+#p5b_wand .p5b-wand-pick {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    padding: 2px 4px;
+    font-size: 0.9em;
+    line-height: 1.3;
+}
+#p5b_wand .p5b-wand-err {
+    flex: 0 1 auto;
+    min-width: 0;
+    font-size: 0.8em;
+    color: #d66;
+    overflow-wrap: anywhere;
+}
+#p5b_wand .p5b-wand-err:empty { display: none; }
