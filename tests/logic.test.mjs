@@ -61,11 +61,13 @@ test('弹幕切字', () => {
     assert.deepEqual(splitDanmuText('【】', 5), ['【】']);
 });
 
-test('气泡宽度写进注入样式', () => {
+test('气泡宽度是上限语义', () => {
     const t = THEMES['P5柔和'];
-    assert.match(themeCss(t, 1, 80), /p5b-bubble\{width:80%;\}/);
-    assert.doesNotMatch(themeCss(t, 1, 0), /p5b-bubble\{width/, '0 = 不输出宽度规则');
-    assert.match(themeCss(t, 1, 999), /width:100%;/, '上限夹到 100');
+    const css = themeCss(t, 1, 80);
+    assert.match(css, /p5b-bubble\{max-width:min\(80%, calc\(100% - 2\.2em\)\);\}/);
+    assert.doesNotMatch(css, /p5b-bubble\{width:/, '不输出固定 width，短气泡才能收缩');
+    assert.doesNotMatch(themeCss(t, 1, 0), /p5b-bubble\{max-width/, '0 = 不输出宽度规则');
+    assert.match(themeCss(t, 1, 999), /min\(100%,/, '上限夹到 100');
 });
 
 test('气泡路径', () => {

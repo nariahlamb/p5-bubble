@@ -2,7 +2,7 @@
 // 移植自阅读 App 段落脚本「奶茶のP5聚合(0904)」：对话气泡 / 论坛体 / 弹幕 + 10 套配色。
 // 只改渲染后的 DOM，不改 chat 数据；消息文本一律走 textContent，不拼 innerHTML。
 
-export const VERSION = '1.0.3';
+export const VERSION = '1.0.4';
 const SETTINGS_KEY = 'p5Bubble';
 const ERR_KEY = 'p5b_last_error';
 
@@ -35,7 +35,7 @@ export const DEFAULTS = Object.freeze({
     splitLength: 10,   // 台词达到该字数后遇句末标点拆成新气泡；0 = 不拆
     danmuSplitLength: 24,  // 弹幕单条达到该字数后在标点处断开；0 = 不断
     fontScale: 100,
-    bubbleWidth: 0,    // 气泡宽度占消息区百分比；0 = 按内容自适应
+    bubbleWidth: 0,    // 气泡最大宽度占消息区百分比；0 = 不限制（仅受基础 max-width 约束）
     mode: 'day',
     dayPreset: 'P5柔和',
     nightPreset: '夜间Storm',
@@ -208,9 +208,9 @@ export function themeCss(theme, scale, width = 0) {
     const vars = ['lB', 'lT', 'lS', 'lSh', 'rB', 'rT', 'rS', 'rSh'].map(k => `--p5b-${k}:${theme[k]};`).join('');
     const pal = theme.pal.map((c, i) => `--p5b-p${i}:${c};`).join('');
     const w = Math.max(0, Math.min(100, Number(width) || 0));
-    // 固定宽度只在 >0 时输出。max-width 仍由 style.css 的 calc(100% - 2.2em) 兜底，
-    // 因此填 100% 等于「占满可用宽度」，不会横向溢出。
-    const widthRule = w > 0 ? `body .mes_text .p5b-bubble{width:${w}%;}` : '';
+    // 是「上限」不是固定宽度：气泡本身 width:fit-content，短的照样收缩、长的才被卡在 w%。
+    // 再套一层 min()，保留 style.css 里 calc(100% - 2.2em) 的左右留白。
+    const widthRule = w > 0 ? `body .mes_text .p5b-bubble{max-width:min(${w}%, calc(100% - 2.2em));}` : '';
     return `:root{${vars}${pal}--p5b-stripe:${hexToRgba(theme.pal[0], 0.15)};--p5b-scale:${scale};}${widthRule}`;
 }
 
@@ -536,7 +536,7 @@ function buildPanel() {
       <input id="p5b_danmu_split" class="text_pole" type="number" min="0" max="60" step="1" data-k="danmuSplitLength"></div>
     <div class="p5b-row"><label for="p5b_scale">气泡字号 %</label>
       <input id="p5b_scale" class="text_pole" type="number" min="60" max="150" step="5" data-k="fontScale"></div>
-    <div class="p5b-row"><label for="p5b_width">气泡宽度 %（0=自适应）</label>
+    <div class="p5b-row"><label for="p5b_width">气泡最大宽度 %（0=自适应）</label>
       <input id="p5b_width" class="text_pole" type="number" min="0" max="100" step="5" data-k="bubbleWidth"></div>
     <hr class="sysHR">
     <div class="p5b-row"><label for="p5b_mode">模式</label>
