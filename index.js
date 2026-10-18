@@ -231,6 +231,7 @@ const state = {
     ro: null,
     listeners: [],
     timer: 0,
+    relayout: 0,            // applyTheme 的 rAF 句柄（合并逐字输入的重画）
     styleEl: null,
 };
 
@@ -276,8 +277,14 @@ function applyTheme() {
     }
     const scale = Math.min(1.5, Math.max(0.6, Number(s.fontScale) / 100 || 1));
     state.styleEl.textContent = themeCss(THEMES[currentThemeName(s)], scale, s.bubbleWidth);
-    // 宽度/字号变了要立刻重画 SVG 底形。ResizeObserver 要等下一帧，这里同步补一次。
-    state.bubbles.forEach(b => { if (b.isConnected) layoutBubble(b); });
+    // 宽度/字号变了要立刻重画 SVG 底形。ResizeObserver 要等下一帧，这里同步补一次；
+    // 但面板是 input 事件驱动，逐字都会进来，所以用 rAF 合并到一帧内只画一次。
+    if (!state.relayout) {
+        state.relayout = requestAnimationFrame(() => {
+            state.relayout = 0;
+            state.bubbles.forEach(b => { if (b.isConnected) layoutBubble(b); });
+        });
+    }
     updateWandLabel();
 }
 
@@ -473,6 +480,7 @@ function schedule(delay = 80) {
 function restoreAll() {
     if (state.timer) { clearTimeout(state.timer); state.timer = 0; }
     if (state.retry) { clearTimeout(state.retry); state.retry = 0; }
+    if (state.relayout) { cancelAnimationFrame(state.relayout); state.relayout = 0; }
     for (const [p, html] of state.originals) {
         if (p.isConnected) { p.innerHTML = html; p.classList.remove('p5b-host'); }
     }
