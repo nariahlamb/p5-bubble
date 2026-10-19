@@ -1,0 +1,10 @@
+# 本地开发专用，不进公开仓库
+# tools/sync.sh 写死了本机部署路径（RikkaHub 工作区 ID、TT 包名路径），对别人无用
+tools/
+tests/
+
+# 备份与临时文件
+*.bak
+*.bak-*
+*.log
+.DS_Store

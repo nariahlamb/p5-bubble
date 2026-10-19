@@ -21,13 +21,6 @@ TauriTavern / SillyTavern 浏览器端 UI 扩展。把 AI 回复里的引号台�
 
 格式要求世界书 `P5气泡格式.json` 放到 `data/default-user/worlds/`，在需要的卡里挂上。
 
-## 测试
-
-```bash
-node --check index.js
-node --test tests/
-```
-
 ## 版本
 
 - 1.0.4：气泡宽度改为「最大宽度」语义，短台词不再被撑成空大框
