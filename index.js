@@ -2,7 +2,7 @@
 // 移植自阅读 App 段落脚本「奶茶のP5聚合(0904)」：对话气泡 / 论坛体 / 弹幕 + 10 套配色。
 // 只改渲染后的 DOM，不改 chat 数据；消息文本一律走 textContent，不拼 innerHTML。
 
-export const VERSION = '1.0.4';
+export const VERSION = '1.0.5';
 const SETTINGS_KEY = 'p5Bubble';
 const ERR_KEY = 'p5b_last_error';
 
@@ -23,6 +23,10 @@ export const THEMES = {
 };
 export const DAY_PRESETS = ['P5柔和', '温润奶咖', '冷萃青', '樱粉手账', '绿森林'];
 export const NIGHT_PRESETS = ['P5暗黑', '夜间Storm', 'Latte深咖', '复古红蓝', '纯粹黑灰'];
+export const THEME_COLOR_KEYS = ['lB', 'lT', 'lS', 'lSh', 'rB', 'rT', 'rS', 'rSh'];
+export const CUSTOM_THEME_LIMIT = 8;
+const TAG_NAME_RE = /^[a-z][a-z0-9._:-]*$/i;
+const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
 
 export const DEFAULTS = Object.freeze({
     enabled: true,
@@ -36,11 +40,50 @@ export const DEFAULTS = Object.freeze({
     danmuSplitLength: 24,  // 弹幕单条达到该字数后在标点处断开；0 = 不断
     fontScale: 100,
     bubbleWidth: 0,    // 气泡最大宽度占消息区百分比；0 = 不限制（仅受基础 max-width 约束）
+    blacklistTags: '', // 逗号分隔的标签名；只跳过这些标签范围，不改原文
+    customThemes: [],  // 用户保存的主题，最多 CUSTOM_THEME_LIMIT 项
     mode: 'day',
     dayPreset: 'P5柔和',
     nightPreset: '夜间Storm',
     disabledChats: [],
 });
+
+export function normalizeTagBlacklist(value) {
+    const text = Array.isArray(value) ? value.join(',') : String(value ?? '');
+    const seen = new Set();
+    return text.split(/[,，;；\n\r]+/)
+        .map(tag => tag.trim().replace(/^<\/?|>$/g, '').toLowerCase())
+        .filter(tag => TAG_NAME_RE.test(tag) && !seen.has(tag) && seen.add(tag))
+        .slice(0, 64);
+}
+
+export function isBlacklistedTagName(tagName, blacklist) {
+    const name = String(tagName ?? '').toLowerCase();
+    const set = blacklist instanceof Set ? blacklist : new Set(normalizeTagBlacklist(blacklist));
+    return !!name && set.has(name);
+}
+
+function cloneTheme(theme) {
+    return { ...theme, pal: Array.isArray(theme?.pal) ? theme.pal.slice(0, 7) : [] };
+}
+
+export function normalizeCustomThemes(raw) {
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set();
+    const fallback = THEMES['P5柔和'];
+    const result = [];
+    for (const item of raw) {
+        const name = String(item?.name ?? '').trim().slice(0, 24);
+        if (!name || seen.has(name) || THEMES[name]) continue;
+        const theme = { name };
+        for (const key of THEME_COLOR_KEYS) theme[key] = HEX_COLOR_RE.test(item?.[key]) ? item[key].toUpperCase() : fallback[key];
+        theme.pal = Array.from({ length: 7 }, (_, i) => HEX_COLOR_RE.test(item?.pal?.[i]) ? item.pal[i].toUpperCase() : fallback.pal[i]);
+        result.push(theme);
+        seen.add(name);
+        if (result.length >= CUSTOM_THEME_LIMIT) break;
+    }
+    return result;
+}
 
 const DANMU_PAIRS = [['［', '］'], ['[', ']'], ['【', '】']];
 const FORUM_RE = /^([a-zA-Z0-9_\-\u4e00-\u9fa5\s\[\]【】]{1,25})\s*[：:]\s*(.+)$/;
@@ -225,6 +268,7 @@ const state = {
     started: false,
     mo: null,               // #chat 的 MutationObserver：兜底捕获任何重绘
     retry: 0,               // 流式中的轮询定时器
+    filterTimer: 0,         // 黑名单输入后的短防抖重渲染
     originals: new Map(),   // 改写过的 <p> → 原 innerHTML（用于还原/重渲染）
     seen: new WeakSet(),    // 已检查过的 <p>
     bubbles: new Set(),
@@ -245,6 +289,8 @@ function settings() {
         if (cur[k] === undefined) cur[k] = Array.isArray(v) ? [] : v;
     }
     if (!Array.isArray(cur.disabledChats)) cur.disabledChats = [];
+    if (typeof cur.blacklistTags !== 'string') cur.blacklistTags = String(cur.blacklistTags ?? '');
+    cur.customThemes = normalizeCustomThemes(cur.customThemes);
     all[SETTINGS_KEY] = cur;
     return cur;
 }
@@ -263,9 +309,20 @@ function activeForChat(s) {
     return s.enabled && !(key && s.disabledChats.includes(key));
 }
 
+function customThemes(s) { return normalizeCustomThemes(s.customThemes); }
+
+function themeByName(s, name) {
+    return THEMES[name] || customThemes(s).find(t => t.name === name) || null;
+}
+
+function themeNamesForMode(s, mode) {
+    const builtins = mode === 'night' ? NIGHT_PRESETS : DAY_PRESETS;
+    return [...builtins, ...customThemes(s).map(t => t.name)];
+}
+
 function currentThemeName(s) {
     const name = s.mode === 'night' ? s.nightPreset : s.dayPreset;
-    return THEMES[name] ? name : (s.mode === 'night' ? '夜间Storm' : 'P5柔和');
+    return themeByName(s, name) ? name : (s.mode === 'night' ? '夜间Storm' : 'P5柔和');
 }
 
 function applyTheme() {
@@ -276,7 +333,7 @@ function applyTheme() {
         document.head.appendChild(state.styleEl);
     }
     const scale = Math.min(1.5, Math.max(0.6, Number(s.fontScale) / 100 || 1));
-    state.styleEl.textContent = themeCss(THEMES[currentThemeName(s)], scale, s.bubbleWidth);
+    state.styleEl.textContent = themeCss(themeByName(s, currentThemeName(s)), scale, s.bubbleWidth);
     // 宽度/字号变了要立刻重画 SVG 底形。ResizeObserver 要等下一帧，这里同步补一次；
     // 但面板是 input 事件驱动，逐字都会进来，所以用 rAF 合并到一帧内只画一次。
     if (!state.relayout) {
@@ -374,7 +431,20 @@ function splitLines(p) {
     return lines;
 }
 
-function eligible(p, root, s) {
+function hasBlacklistedTag(node, root, blacklist) {
+    if (!blacklist.size) return false;
+    for (let a = node; a; a = a.parentElement) {
+        if (isBlacklistedTagName(a.localName || a.tagName, blacklist)) return true;
+        if (a === root) break;
+    }
+    for (const child of node.querySelectorAll('*')) {
+        if (isBlacklistedTagName(child.localName || child.tagName, blacklist)) return true;
+    }
+    return false;
+}
+
+function eligible(p, root, s, blacklist) {
+    if (hasBlacklistedTag(p, root, blacklist)) return false;
     if (p.querySelector(BLOCKED_DESC)) return false;
     if (s.strict && (p.hasAttribute('class') || p.hasAttribute('style'))) return false;
     for (let a = p.parentElement; a && a !== root; a = a.parentElement) {
@@ -384,9 +454,9 @@ function eligible(p, root, s) {
     return true;
 }
 
-function transformParagraph(p, root, s, counter) {
+function transformParagraph(p, root, s, counter, blacklist) {
     state.seen.add(p);
-    if (!eligible(p, root, s)) return;
+    if (!eligible(p, root, s, blacklist)) return;
     const lines = splitLines(p);
     const results = lines.map(l => analyzeLine(l.text, s));
     if (results.every(r => r.kind === 'plain')) return;
@@ -437,6 +507,7 @@ function scanAll() {
     state.timer = 0;
     prune();
     const s = settings();
+    const blacklist = new Set(normalizeTagBlacklist(s.blacklistTags));
     if (!activeForChat(s) || !(s.dialogue || s.forum || s.danmu)) return;
     const mesList = document.querySelectorAll('#chat .mes');
     const streaming = isStreaming();
@@ -453,7 +524,7 @@ function scanAll() {
         if (!ps.length) return;
         const counter = { side: root.querySelectorAll('.p5b-bubble').length ? 1 : 0, danmu: 0 };
         for (const p of ps) {
-            try { transformParagraph(p, root, s, counter); }
+            try { transformParagraph(p, root, s, counter, blacklist); }
             catch (e) { reportError('render', e); }
         }
     });
@@ -480,6 +551,7 @@ function schedule(delay = 80) {
 function restoreAll() {
     if (state.timer) { clearTimeout(state.timer); state.timer = 0; }
     if (state.retry) { clearTimeout(state.retry); state.retry = 0; }
+    if (state.filterTimer) { clearTimeout(state.filterTimer); state.filterTimer = 0; }
     if (state.relayout) { cancelAnimationFrame(state.relayout); state.relayout = 0; }
     for (const [p, html] of state.originals) {
         if (p.isConnected) { p.innerHTML = html; p.classList.remove('p5b-host'); }
@@ -506,6 +578,157 @@ function optionList(names, selected) {
     return names.map(n => `<option value="${n}"${n === selected ? ' selected' : ''}>${n}</option>`).join('');
 }
 
+function scheduleRerender(delay = 120) {
+    if (state.filterTimer) clearTimeout(state.filterTimer);
+    state.filterTimer = setTimeout(() => { state.filterTimer = 0; rerender(); }, delay);
+}
+
+function newCustomDraft(s) {
+    const base = cloneTheme(themeByName(s, currentThemeName(s)) || THEMES['P5柔和']);
+    return { selectedName: '', name: '我的配色', theme: base };
+}
+
+function updateCustomPreview() {
+    const preview = document.getElementById('p5b_custom_preview');
+    const draft = state.customEditor;
+    if (!preview || !draft) return;
+    for (const key of THEME_COLOR_KEYS) preview.style.setProperty(`--p5b-${key}`, draft.theme[key]);
+    draft.theme.pal.forEach((color, i) => preview.style.setProperty(`--p5b-p${i}`, color));
+}
+
+function syncCustomEditorFields() {
+    const draft = state.customEditor;
+    if (!draft) return;
+    const name = document.getElementById('p5b_custom_name');
+    if (name) name.value = draft.name;
+    for (const input of document.querySelectorAll('[data-p5b-color]')) {
+        const key = input.dataset.p5bColor;
+        if (key in draft.theme) input.value = draft.theme[key];
+        else if (key.startsWith('p')) input.value = draft.theme.pal[Number(key.slice(1))];
+    }
+    updateCustomPreview();
+}
+
+function syncCustomEditor() {
+    const s = settings();
+    const select = document.getElementById('p5b_custom_select');
+    if (!select) return;
+    if (!state.customEditor) state.customEditor = newCustomDraft(s);
+    const saved = customThemes(s);
+    select.replaceChildren(
+        Object.assign(document.createElement('option'), { value: '__new__', textContent: '新建配色' }),
+        ...saved.map(t => Object.assign(document.createElement('option'), { value: t.name, textContent: t.name })),
+    );
+    const editing = saved.some(t => t.name === state.customEditor.selectedName);
+    if (!editing) state.customEditor.selectedName = '';
+    select.value = state.customEditor.selectedName || '__new__';
+    syncCustomEditorFields();
+}
+
+function customStatus(text, error = false) {
+    const node = document.getElementById('p5b_custom_status');
+    if (!node) return;
+    node.textContent = text;
+    node.classList.toggle('p5b-error', error);
+}
+
+function saveCustomTheme() {
+    const s = settings();
+    const draft = state.customEditor;
+    if (!draft) return;
+    const name = String(draft.name || '').trim().slice(0, 24);
+    if (!name) return customStatus('请先填写配色名称。', true);
+    if (THEMES[name]) return customStatus('这个名字属于内置配色，请换一个。', true);
+    const saved = customThemes(s);
+    const editing = saved.some(t => t.name === draft.selectedName);
+    if (!editing && saved.length >= CUSTOM_THEME_LIMIT) return customStatus(`最多保存 ${CUSTOM_THEME_LIMIT} 项自定义配色。`, true);
+    if (saved.some(t => t.name === name && t.name !== draft.selectedName)) return customStatus('已有同名配色，请换一个名字。', true);
+    const normalized = normalizeCustomThemes([{ name, ...draft.theme }])[0];
+    if (!normalized) return customStatus('配色数据无效，未保存。', true);
+    const oldName = draft.selectedName;
+    const next = saved.filter(t => t.name !== oldName && t.name !== name);
+    next.push(normalized);
+    s.customThemes = normalizeCustomThemes(next);
+    if (oldName && oldName !== name) {
+        if (s.dayPreset === oldName) s.dayPreset = name;
+        if (s.nightPreset === oldName) s.nightPreset = name;
+    }
+    s[s.mode === 'night' ? 'nightPreset' : 'dayPreset'] = name;
+    save();
+    state.customEditor = { selectedName: name, name, theme: cloneTheme(normalized) };
+    applyTheme();
+    syncPanelThemeSelects();
+    syncCustomEditor();
+    customStatus(`已保存「${name}」，当前模式已应用。`);
+}
+
+function deleteCustomTheme() {
+    const s = settings();
+    const draft = state.customEditor;
+    const name = draft?.selectedName;
+    if (!name || !customThemes(s).some(t => t.name === name)) return customStatus('请先选择一项已保存的自定义配色。', true);
+    s.customThemes = customThemes(s).filter(t => t.name !== name);
+    if (s.dayPreset === name) s.dayPreset = DAY_PRESETS[0];
+    if (s.nightPreset === name) s.nightPreset = NIGHT_PRESETS[0];
+    save();
+    state.customEditor = newCustomDraft(s);
+    applyTheme();
+    syncPanelThemeSelects();
+    syncCustomEditor();
+    customStatus(`已删除「${name}」。`);
+}
+
+function bindCustomEditor(wrap) {
+    state.customEditor = newCustomDraft(settings());
+    const select = wrap.querySelector('#p5b_custom_select');
+    select.addEventListener('change', () => {
+        const s = settings();
+        const name = select.value;
+        if (name === '__new__') state.customEditor = newCustomDraft(s);
+        else {
+            const found = customThemes(s).find(t => t.name === name);
+            if (found) state.customEditor = { selectedName: name, name, theme: cloneTheme(found) };
+        }
+        customStatus('');
+        syncCustomEditorFields();
+        select.value = state.customEditor.selectedName || '__new__';
+    });
+    wrap.querySelector('#p5b_custom_name').addEventListener('input', e => {
+        state.customEditor.name = e.target.value;
+        customStatus('');
+    });
+    wrap.querySelectorAll('[data-p5b-color]').forEach(input => input.addEventListener('input', e => {
+        const key = e.target.dataset.p5bColor;
+        if (key.startsWith('p')) state.customEditor.theme.pal[Number(key.slice(1))] = e.target.value.toUpperCase();
+        else state.customEditor.theme[key] = e.target.value.toUpperCase();
+        customStatus('');
+        updateCustomPreview();
+    }));
+    const saveButton = wrap.querySelector('#p5b_custom_save');
+    const deleteButton = wrap.querySelector('#p5b_custom_delete');
+    const newButton = wrap.querySelector('#p5b_custom_new');
+    const activate = (node, fn) => {
+        node.addEventListener('click', fn);
+        node.addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); }
+        });
+    };
+    activate(saveButton, saveCustomTheme);
+    activate(deleteButton, deleteCustomTheme);
+    activate(newButton, () => {
+        state.customEditor = newCustomDraft(settings());
+        customStatus('');
+        syncCustomEditor();
+    });
+    syncCustomEditor();
+}
+
+function fillThemeSelect(select, names, value) {
+    if (!select) return;
+    select.replaceChildren(...names.map(name => Object.assign(document.createElement('option'), { value: name, textContent: name })));
+    select.value = names.includes(value) ? value : names[0];
+}
+
 function buildPanel() {
     const host = document.getElementById('extensions_settings2') || document.getElementById('extensions_settings');
     if (!host || document.getElementById('p5b_settings')) return;
@@ -527,6 +750,11 @@ function buildPanel() {
     <label class="checkbox_label"><input type="checkbox" data-k="danmu"> 弹幕（整行被【】/[]/［］包住）</label>
     <label class="checkbox_label"><input type="checkbox" data-k="processUser"> 也处理用户消息</label>
     <label class="checkbox_label" title="关闭后会进入卡片自带的 HTML 容器里找段落，可能破坏卡片排版"><input type="checkbox" data-k="strict"> 严格模式（跳过卡片自带 HTML 容器）</label>
+    <div class="p5b-stack">
+      <label for="p5b_blacklist">黑名单标签（逗号分隔，输入即生效）</label>
+      <textarea id="p5b_blacklist" class="text_pole p5b-blacklist" rows="2" data-k="blacklistTags" placeholder="think,thinking,options.branches"></textarea>
+      <small class="p5b-hint">会跳过这些标签自身及其内部内容，例如 think 会保护 &lt;think&gt;…&lt;/think&gt;。</small>
+    </div>
     <hr class="sysHR">
     <div class="p5b-row"><label for="p5b_side">首个气泡</label>
       <select id="p5b_side" class="text_pole" data-k="startSide"><option value="left">左</option><option value="right">右</option></select></div>
@@ -546,6 +774,41 @@ function buildPanel() {
     <div class="p5b-row"><label for="p5b_night">夜间配色</label>
       <select id="p5b_night" class="text_pole" data-k="nightPreset">${optionList(NIGHT_PRESETS, s.nightPreset)}</select></div>
     <div class="p5b-preview" aria-hidden="true"><span class="p5b-sw p5b-sw-l"></span><span class="p5b-sw p5b-sw-r"></span><span class="p5b-sw-pal"></span></div>
+    <div class="p5b-custom-section">
+      <b>自定义配色（最多 8 项）</b>
+      <small class="p5b-hint">颜色只在点击“保存配色”后写入设置；保存后可在上面的日间/夜间配色里选择。</small>
+      <div class="p5b-row"><label for="p5b_custom_select">已保存配色</label>
+        <select id="p5b_custom_select" class="text_pole"></select></div>
+      <div class="p5b-row"><label for="p5b_custom_name">名称</label>
+        <input id="p5b_custom_name" class="text_pole" type="text" maxlength="24" placeholder="我的配色"></div>
+      <div class="p5b-color-group"><b>左侧气泡</b>
+        <div class="p5b-color-grid">
+          <label>底色 <input type="color" data-p5b-color="lB"></label><label>文字 <input type="color" data-p5b-color="lT"></label>
+          <label>描边 <input type="color" data-p5b-color="lS"></label><label>阴影 <input type="color" data-p5b-color="lSh"></label>
+        </div>
+      </div>
+      <div class="p5b-color-group"><b>右侧气泡</b>
+        <div class="p5b-color-grid">
+          <label>底色 <input type="color" data-p5b-color="rB"></label><label>文字 <input type="color" data-p5b-color="rT"></label>
+          <label>描边 <input type="color" data-p5b-color="rS"></label><label>阴影 <input type="color" data-p5b-color="rSh"></label>
+        </div>
+      </div>
+      <div class="p5b-color-group"><b>强调色</b>
+        <div class="p5b-color-grid p5b-palette-grid">
+          <label>1 <input type="color" data-p5b-color="p0"></label><label>2 <input type="color" data-p5b-color="p1"></label>
+          <label>3 <input type="color" data-p5b-color="p2"></label><label>4 <input type="color" data-p5b-color="p3"></label>
+          <label>5 <input type="color" data-p5b-color="p4"></label><label>6 <input type="color" data-p5b-color="p5"></label>
+          <label>7 <input type="color" data-p5b-color="p6"></label>
+        </div>
+      </div>
+      <div id="p5b_custom_preview" class="p5b-custom-preview" aria-hidden="true"><span class="p5b-sw p5b-sw-l"></span><span class="p5b-sw p5b-sw-r"></span><span class="p5b-sw-pal"></span></div>
+      <div class="p5b-custom-actions">
+        <div id="p5b_custom_new" class="menu_button" role="button" tabindex="0">新建</div>
+        <div id="p5b_custom_save" class="menu_button" role="button" tabindex="0">保存配色</div>
+        <div id="p5b_custom_delete" class="menu_button" role="button" tabindex="0">删除</div>
+      </div>
+      <small id="p5b_custom_status" class="p5b-custom-status" aria-live="polite"></small>
+    </div>
     <div class="p5b-row"><div id="p5b_rerender" class="menu_button" role="button" tabindex="0">重新渲染当前聊天</div></div>
     <small class="p5b-hint">只改显示，不改聊天记录。格式要求见世界书「P5气泡格式」。v${VERSION}</small>
   </div>
@@ -553,7 +816,7 @@ function buildPanel() {
     host.appendChild(wrap);
 
     const THEME_KEYS = new Set(['mode', 'dayPreset', 'nightPreset', 'fontScale', 'bubbleWidth']);
-    const LIVE_KEYS = new Set(['fontScale', 'bubbleWidth']);
+    const LIVE_KEYS = new Set(['fontScale', 'bubbleWidth', 'blacklistTags']);
     wrap.querySelectorAll('[data-k]').forEach(input => {
         const k = input.dataset.k;
         if (input.type === 'checkbox') input.checked = !!s[k];
@@ -566,8 +829,11 @@ function buildPanel() {
                 : input.type === 'number' ? Math.max(Number(input.min) || 0, Math.min(Number(input.max) || 999, Number(input.value) || 0))
                 : input.value;
             save();
-            // 字号/宽度只改样式，重画即可，不重扫 DOM
-            if (THEME_KEYS.has(k)) applyTheme();
+            // 字号/宽度只改样式；黑名单输入用短防抖重渲染，避免每个按键都完整还原聊天
+            if (THEME_KEYS.has(k)) {
+                applyTheme();
+                if (k === 'mode' || k === 'dayPreset' || k === 'nightPreset') syncPanelThemeSelects();
+            } else if (k === 'blacklistTags') scheduleRerender();
             else rerender();
         };
         input.addEventListener('change', commit);
@@ -585,6 +851,8 @@ function buildPanel() {
     const rr = wrap.querySelector('#p5b_rerender');
     rr.addEventListener('click', rerender);
     rr.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); rerender(); } });
+    bindCustomEditor(wrap);
+    syncPanelThemeSelects();
     syncChatToggle();
 }
 
@@ -635,10 +903,8 @@ function syncPanelThemeSelects() {
     const s = settings();
     const modeSel = document.getElementById('p5b_mode');
     if (modeSel) modeSel.value = s.mode;
-    const day = document.getElementById('p5b_day');
-    if (day) day.value = s.dayPreset;
-    const night = document.getElementById('p5b_night');
-    if (night) night.value = s.nightPreset;
+    fillThemeSelect(document.getElementById('p5b_day'), themeNamesForMode(s, 'day'), s.dayPreset);
+    fillThemeSelect(document.getElementById('p5b_night'), themeNamesForMode(s, 'night'), s.nightPreset);
 }
 
 function updateWandLabel() {
@@ -709,6 +975,7 @@ export function onDisable() {
     state.styleEl = null;
     document.getElementById('p5b_settings')?.remove();
     document.getElementById('p5b_wand')?.remove();
+    state.customEditor = null;
     state.started = false;
 }
 

@@ -135,6 +135,21 @@
 .p5b-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .p5b-row > label { flex: 1; }
 .p5b-row > .text_pole { flex: 0 0 9em; margin: 0; }
+.p5b-stack { display: flex; flex-direction: column; gap: 4px; }
+.p5b-blacklist { box-sizing: border-box; width: 100%; min-height: 3.3em; resize: vertical; line-height: 1.35; }
+.p5b-custom-section { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--SmartThemeBorderColor, rgba(128,128,128,.35)); border-radius: 6px; }
+.p5b-color-group { display: flex; flex-direction: column; gap: 4px; }
+.p5b-color-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 8px; }
+.p5b-color-grid label { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 32px; }
+.p5b-color-grid input[type="color"] { width: 42px; height: 30px; padding: 1px; border: 0; background: transparent; }
+.p5b-custom-preview { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+.p5b-custom-preview .p5b-sw-l { background: var(--p5b-lB); border-color: var(--p5b-lS); box-shadow: 3px 3px 0 var(--p5b-lSh); }
+.p5b-custom-preview .p5b-sw-r { background: var(--p5b-rB); border-color: var(--p5b-rS); box-shadow: 3px 3px 0 var(--p5b-rSh); }
+.p5b-custom-preview .p5b-sw-pal { flex: 1; background: linear-gradient(90deg, var(--p5b-p0) 0 14.3%, var(--p5b-p1) 0 28.6%, var(--p5b-p2) 0 42.9%, var(--p5b-p3) 0 57.1%, var(--p5b-p4) 0 71.4%, var(--p5b-p5) 0 85.7%, var(--p5b-p6) 0); }
+.p5b-custom-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.p5b-custom-actions .menu_button { flex: 1 1 5em; min-height: 32px; text-align: center; }
+.p5b-custom-status { min-height: 1.2em; }
+.p5b-custom-status.p5b-error { color: var(--SmartThemeEmColor, #d66); }
 .p5b-preview { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
 .p5b-sw { width: 2.2em; height: 1.2em; border: 2px solid; }
 .p5b-sw-l { background: var(--p5b-lB); border-color: var(--p5b-lS); box-shadow: 3px 3px 0 var(--p5b-lSh); }
@@ -165,3 +180,8 @@
     overflow-wrap: anywhere;
 }
 #p5b_wand .p5b-wand-err:empty { display: none; }
+
+@media (max-width: 360px) {
+    .p5b-color-grid { grid-template-columns: 1fr; }
+    .p5b-row > .text_pole { flex-basis: 8em; }
+}
