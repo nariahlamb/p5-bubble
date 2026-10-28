@@ -2,7 +2,7 @@
 // 移植自阅读 App 段落脚本「奶茶のP5聚合(0904)」：对话气泡 / 论坛体 / 弹幕 + 10 套配色。
 // 只改渲染后的 DOM，不改 chat 数据；消息文本一律走 textContent，不拼 innerHTML。
 
-export const VERSION = '1.0.5';
+export const VERSION = '1.0.6';
 const SETTINGS_KEY = 'p5Bubble';
 const ERR_KEY = 'p5b_last_error';
 
@@ -736,26 +736,32 @@ function buildPanel() {
     const wrap = el('div');
     wrap.id = 'p5b_settings';
     wrap.innerHTML = `
-<div class="inline-drawer">
-  <div class="inline-drawer-toggle inline-drawer-header">
-    <b>P5 对话气泡</b>
-    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-  </div>
-  <div class="inline-drawer-content p5b-panel">
+<details class="p5b-fold p5b-root">
+  <summary class="p5b-fold-title inline-drawer-header"><b>P5 对话气泡</b></summary>
+  <div class="p5b-panel">
+    <details class="p5b-fold p5b-section">
+      <summary class="p5b-fold-title">功能开关</summary>
+      <div class="p5b-section-content">
     <label class="checkbox_label"><input type="checkbox" data-k="enabled"> 总开关</label>
     <label class="checkbox_label"><input type="checkbox" id="p5b_chat_off"> 对当前角色/群聊停用</label>
-    <hr class="sysHR">
     <label class="checkbox_label"><input type="checkbox" data-k="dialogue"> 对话气泡（“” "" 「」 『』）</label>
     <label class="checkbox_label"><input type="checkbox" data-k="forum"> 论坛体（整行「名字：内容」）</label>
     <label class="checkbox_label"><input type="checkbox" data-k="danmu"> 弹幕（整行被【】/[]/［］包住）</label>
     <label class="checkbox_label"><input type="checkbox" data-k="processUser"> 也处理用户消息</label>
     <label class="checkbox_label" title="关闭后会进入卡片自带的 HTML 容器里找段落，可能破坏卡片排版"><input type="checkbox" data-k="strict"> 严格模式（跳过卡片自带 HTML 容器）</label>
-    <div class="p5b-stack">
+      </div>
+    </details>
+    <details class="p5b-fold p5b-section">
+      <summary class="p5b-fold-title">标签过滤</summary>
+      <div class="p5b-section-content p5b-stack">
       <label for="p5b_blacklist">黑名单标签（逗号分隔，输入即生效）</label>
       <textarea id="p5b_blacklist" class="text_pole p5b-blacklist" rows="2" data-k="blacklistTags" placeholder="think,thinking,options.branches"></textarea>
       <small class="p5b-hint">会跳过这些标签自身及其内部内容，例如 think 会保护 &lt;think&gt;…&lt;/think&gt;。</small>
-    </div>
-    <hr class="sysHR">
+      </div>
+    </details>
+    <details class="p5b-fold p5b-section">
+      <summary class="p5b-fold-title">气泡排版</summary>
+      <div class="p5b-section-content">
     <div class="p5b-row"><label for="p5b_side">首个气泡</label>
       <select id="p5b_side" class="text_pole" data-k="startSide"><option value="left">左</option><option value="right">右</option></select></div>
     <div class="p5b-row"><label for="p5b_split">长台词拆分（字，0=不拆）</label>
@@ -766,7 +772,11 @@ function buildPanel() {
       <input id="p5b_scale" class="text_pole" type="number" min="60" max="150" step="5" data-k="fontScale"></div>
     <div class="p5b-row"><label for="p5b_width">气泡最大宽度 %（0=自适应）</label>
       <input id="p5b_width" class="text_pole" type="number" min="0" max="100" step="5" data-k="bubbleWidth"></div>
-    <hr class="sysHR">
+      </div>
+    </details>
+    <details class="p5b-fold p5b-section">
+      <summary class="p5b-fold-title">日夜配色</summary>
+      <div class="p5b-section-content">
     <div class="p5b-row"><label for="p5b_mode">模式</label>
       <select id="p5b_mode" class="text_pole" data-k="mode"><option value="day">☀️ 日间</option><option value="night">🌙 夜间</option></select></div>
     <div class="p5b-row"><label for="p5b_day">日间配色</label>
@@ -774,33 +784,36 @@ function buildPanel() {
     <div class="p5b-row"><label for="p5b_night">夜间配色</label>
       <select id="p5b_night" class="text_pole" data-k="nightPreset">${optionList(NIGHT_PRESETS, s.nightPreset)}</select></div>
     <div class="p5b-preview" aria-hidden="true"><span class="p5b-sw p5b-sw-l"></span><span class="p5b-sw p5b-sw-r"></span><span class="p5b-sw-pal"></span></div>
-    <div class="p5b-custom-section">
-      <b>自定义配色（最多 8 项）</b>
+      </div>
+    </details>
+    <details class="p5b-fold p5b-section">
+      <summary class="p5b-fold-title">自定义配色（最多 8 项）</summary>
+      <div class="p5b-custom-section">
       <small class="p5b-hint">颜色只在点击“保存配色”后写入设置；保存后可在上面的日间/夜间配色里选择。</small>
       <div class="p5b-row"><label for="p5b_custom_select">已保存配色</label>
         <select id="p5b_custom_select" class="text_pole"></select></div>
       <div class="p5b-row"><label for="p5b_custom_name">名称</label>
         <input id="p5b_custom_name" class="text_pole" type="text" maxlength="24" placeholder="我的配色"></div>
-      <div class="p5b-color-group"><b>左侧气泡</b>
+      <details class="p5b-fold p5b-color-group"><summary class="p5b-fold-title">左侧气泡</summary>
         <div class="p5b-color-grid">
           <label>底色 <input type="color" data-p5b-color="lB"></label><label>文字 <input type="color" data-p5b-color="lT"></label>
           <label>描边 <input type="color" data-p5b-color="lS"></label><label>阴影 <input type="color" data-p5b-color="lSh"></label>
         </div>
-      </div>
-      <div class="p5b-color-group"><b>右侧气泡</b>
+      </details>
+      <details class="p5b-fold p5b-color-group"><summary class="p5b-fold-title">右侧气泡</summary>
         <div class="p5b-color-grid">
           <label>底色 <input type="color" data-p5b-color="rB"></label><label>文字 <input type="color" data-p5b-color="rT"></label>
           <label>描边 <input type="color" data-p5b-color="rS"></label><label>阴影 <input type="color" data-p5b-color="rSh"></label>
         </div>
-      </div>
-      <div class="p5b-color-group"><b>强调色</b>
+      </details>
+      <details class="p5b-fold p5b-color-group"><summary class="p5b-fold-title">强调色</summary>
         <div class="p5b-color-grid p5b-palette-grid">
           <label>1 <input type="color" data-p5b-color="p0"></label><label>2 <input type="color" data-p5b-color="p1"></label>
           <label>3 <input type="color" data-p5b-color="p2"></label><label>4 <input type="color" data-p5b-color="p3"></label>
           <label>5 <input type="color" data-p5b-color="p4"></label><label>6 <input type="color" data-p5b-color="p5"></label>
           <label>7 <input type="color" data-p5b-color="p6"></label>
         </div>
-      </div>
+      </details>
       <div id="p5b_custom_preview" class="p5b-custom-preview" aria-hidden="true"><span class="p5b-sw p5b-sw-l"></span><span class="p5b-sw p5b-sw-r"></span><span class="p5b-sw-pal"></span></div>
       <div class="p5b-custom-actions">
         <div id="p5b_custom_new" class="menu_button" role="button" tabindex="0">新建</div>
@@ -808,11 +821,12 @@ function buildPanel() {
         <div id="p5b_custom_delete" class="menu_button" role="button" tabindex="0">删除</div>
       </div>
       <small id="p5b_custom_status" class="p5b-custom-status" aria-live="polite"></small>
-    </div>
+      </div>
+    </details>
     <div class="p5b-row"><div id="p5b_rerender" class="menu_button" role="button" tabindex="0">重新渲染当前聊天</div></div>
     <small class="p5b-hint">只改显示，不改聊天记录。格式要求见世界书「P5气泡格式」。v${VERSION}</small>
   </div>
-</div>`;
+</details>`;
     host.appendChild(wrap);
 
     const THEME_KEYS = new Set(['mode', 'dayPreset', 'nightPreset', 'fontScale', 'bubbleWidth']);
